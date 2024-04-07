@@ -13,6 +13,10 @@ class BlueServices {
   bool status = false;
   String blueID = '';
 
+  bool isPaired=false;
+  bool isConnect=false;
+
+
   BluetoothState _bluetoothState = BluetoothState.UNKNOWN;
   StreamSubscription<BluetoothDiscoveryResult>? _streamSubscription;
   List<BluetoothDiscoveryResult> results = List<BluetoothDiscoveryResult>.empty(growable: true);
@@ -141,13 +145,17 @@ class BlueServices {
 
     try {
       final locationStatus = await checkLocationPermissions();
+
       if (!locationStatus){
         return status;
-
       }
+
+
       final blueStatus = await checkBluetoothPermissions();
       if (!blueStatus){
+
         return status;
+
       }
 
       final blueON = await turnOn();
@@ -177,12 +185,12 @@ class BlueServices {
 
   BluetoothConnection? _connection;
 
-  Future<void> connectToDevice(String address) async {
+  Future<bool> connectToDevice(String address) async {
     try {
       bool isAlreadyPaired = await _isDevicePaired(address);
       if (!isAlreadyPaired) {
-        bool isPairSuccess = await _pairDevice(address);
-        if (!isPairSuccess) {
+        isAlreadyPaired = await _pairDevice(address);
+        if (!isAlreadyPaired) {
           Fluttertoast.showToast(
             msg: 'Failed to pair with the device',
             toastLength: Toast.LENGTH_SHORT,
@@ -192,32 +200,44 @@ class BlueServices {
             textColor: Colors.white,
             fontSize: 16.0,
           );
-          return;
+          return false;
         }
       }
 
       // Now attempt to connect
-      _connection = await BluetoothConnection.toAddress(address);
-      Fluttertoast.showToast(
-        msg: 'Connected to IoT device!',
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.CENTER,
-        timeInSecForIosWeb: 1,
-        backgroundColor: Colors.green,
-        textColor: Colors.white,
-        fontSize: 16.0,
-      );
+      if(isAlreadyPaired){
+        isPaired=true;
+        Fluttertoast.showToast(
+          msg: 'Paired and Connected',
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.CENTER,
+          timeInSecForIosWeb: 1,
+          backgroundColor: Colors.green,
+          textColor: Colors.white,
+          fontSize: 16.0,
+        );
+        _connection = await BluetoothConnection.toAddress(address)
+            .timeout(Duration(seconds: 60), onTimeout: () {
+          throw TimeoutException('Connection timed out');
+        });
+        Fluttertoast.showToast(
+          msg: 'Connected to device!',
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.CENTER,
+          timeInSecForIosWeb: 1,
+          backgroundColor: Colors.green,
+          textColor: Colors.white,
+          fontSize: 16.0,
+        );
+        return true;
+      }
+
+
     } catch (e) {
-      Fluttertoast.showToast(
-        msg: 'Error connecting to IoT device: $e',
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.CENTER,
-        timeInSecForIosWeb: 1,
-        backgroundColor: Colors.red,
-        textColor: Colors.white,
-        fontSize: 16.0,
-      );
+
+      print(e.toString());
     }
+    return true;
   }
 
   Future<bool> _isDevicePaired(String address) async {
@@ -256,7 +276,8 @@ class BlueServices {
 
   Future<void> sendDataOverSingleBluetooth(String dataToSend) async {
     try {
-      _connection?.output.add(utf8.encode(dataToSend + '\r\n'));
+
+      _connection?.output.add(utf8.encode(dataToSend));
       await _connection?.output.allSent;
       Fluttertoast.showToast(
         msg: 'Data sent over Bluetooth: $dataToSend',
@@ -287,9 +308,7 @@ class BlueServices {
         return;
       }
 
-      await connectToDevice(blueAddress);
-
-      await sendDataOverSingleBluetooth("Hello from bluetooth");
+      bool isConnected=   await connectToDevice(blueAddress);
 
     } catch (e) {
       Fluttertoast.showToast(
